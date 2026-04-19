@@ -181,7 +181,7 @@ class ventaController extends Controller
     /**
      * nueva funcion de venta tipo pos mas amigable 17/04/2026
      */
-    public function pos()
+public function pos()
 {
     $productos = \DB::table('productos as p')
         ->join('inventario as i', 'i.producto_id', '=', 'p.id')
@@ -195,6 +195,9 @@ class ventaController extends Controller
         ->where('p.estado', 1)
         ->get();
 
-    return view('venta.pos', compact('productos'));
+    // 🔥 EMPRESA (CLAVE)
+    $empresa = $this->empresaService->obtenerEmpresa();
+
+    return view('venta.pos', compact('productos', 'empresa'));
 }
 }

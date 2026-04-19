@@ -18,7 +18,7 @@
 
         <input type="text" id="codigo_barra"
                class="form-control form-control-lg mb-3"
-               placeholder="Escanear o escribir código..."
+               placeholder="Escanear código..."
                autofocus>
 
         <table class="table table-striped">
@@ -37,17 +37,35 @@
     </div>
 
     <!-- DERECHA -->
-    <div class="col-md-4 bg-success text-white d-flex flex-column"
-         style="height: calc(100vh - 56px); position: sticky; top: 56px;">
+    <div class="col-md-4 bg-success text-white d-flex flex-column">
 
-        <!-- TOTALES -->
-        <div class="p-4 mb-1">
-            <h6>Subtotal: <span id="subtotal">0</span></h6>
-            <h6>IGV: <span id="igv">0</span></h6>
-            <h2>Total: <span id="total">0</span></h2>
+        <div class="p-4">
+
+            <h6>
+                Subtotal:
+                <span id="subtotal">0</span>
+                {{$empresa->moneda->simbolo}}
+            </h6>
+
+            <h6>
+                {{$empresa->abreviatura_impuesto}} ({{$empresa->porcentaje_impuesto}}%):
+                <span id="igv">0</span>
+                {{$empresa->moneda->simbolo}}
+            </h6>
+
+            <h2>
+                Total:
+                <span id="total">0</span>
+                {{$empresa->moneda->simbolo}}
+            </h2>
+
+            <!-- INPUTS -->
+            <input type="hidden" id="inputSubtotal">
+            <input type="hidden" id="inputImpuesto">
+            <input type="hidden" id="inputTotal">
+
         </div>
 
-        <!-- CONTROLES -->
         <div class="mt-auto p-3 bg-dark">
 
             <select id="metodo_pago" class="form-control mb-2">
@@ -82,14 +100,12 @@
 @push('js')
 <script>
 
-// 🔥 CSRF
 $.ajaxSetup({
     headers: {
         'X-CSRF-TOKEN': document.querySelector('meta[name="csrf-token"]').getAttribute('content')
     }
 });
 
-// DATOS
 let productos = @json($productos);
 let carrito = [];
 
@@ -97,7 +113,8 @@ let subtotal = 0;
 let igv = 0;
 let total = 0;
 
-const impuesto = 18;
+// 🔥 DINÁMICO
+const impuesto = {{ $empresa->porcentaje_impuesto }};
 
 
 // ESCANEAR
@@ -106,7 +123,7 @@ $('#codigo_barra').keypress(function(e){
 
         let codigo = $(this).val().trim();
 
-        let producto = productos.find(p => p.codigo == codigo);
+        let producto = productos.find(p => String(p.codigo) === codigo);
 
         if(producto){
             agregar(producto);
@@ -122,7 +139,7 @@ $('#codigo_barra').keypress(function(e){
 // AGREGAR
 function agregar(producto){
 
-    let existente = carrito.find(p => p.id == producto.id);
+    let existente = carrito.find(p => p.id === producto.id);
 
     if(existente){
 
@@ -167,7 +184,7 @@ function render(){
         <tr>
             <td>${p.nombre}</td>
             <td>${p.cantidad}</td>
-            <td>${p.precio}</td>
+            <td>${p.precio} {{$empresa->moneda->simbolo}}</td>
             <td>${sub.toFixed(2)}</td>
             <td>
                 <button onclick="eliminar(${i})" class="btn btn-danger btn-sm">X</button>
@@ -179,10 +196,19 @@ function render(){
     igv = subtotal * (impuesto / 100);
     total = subtotal + igv;
 
+    subtotal = parseFloat(subtotal.toFixed(2));
+    igv = parseFloat(igv.toFixed(2));
+    total = parseFloat(total.toFixed(2));
+
     $('#detalle').html(html);
     $('#subtotal').text(subtotal.toFixed(2));
     $('#igv').text(igv.toFixed(2));
     $('#total').text(total.toFixed(2));
+
+    // 🔥 INPUTS
+    $('#inputSubtotal').val(subtotal);
+    $('#inputImpuesto').val(igv);
+    $('#inputTotal').val(total);
 
     calcularVuelto();
 }
@@ -195,26 +221,20 @@ function eliminar(i){
 }
 
 
-// CALCULAR VUELTO
+// VUELTO
 function calcularVuelto(){
 
     let metodo = $('#metodo_pago').val();
     let recibido = parseFloat($('#recibido').val());
 
-    if(metodo === 'EFECTIVO'){
-        if(!isNaN(recibido)){
-            let vuelto = recibido - total;
-            $('#vuelto').text(vuelto.toFixed(2));
-        } else {
-            $('#vuelto').text("0.00");
-        }
+    if(metodo === 'EFECTIVO' && !isNaN(recibido)){
+        let vuelto = recibido - total;
+        $('#vuelto').text(vuelto.toFixed(2));
     } else {
         $('#vuelto').text("0.00");
     }
 }
 
-
-// EVENTOS
 $('#recibido').on('input', calcularVuelto);
 
 $('#metodo_pago').on('change', function(){
@@ -230,7 +250,7 @@ $('#metodo_pago').on('change', function(){
 });
 
 
-// 🔥 GUARDAR
+// GUARDAR
 function guardarVenta(){
 
     if(carrito.length == 0){
@@ -242,52 +262,38 @@ function guardarVenta(){
     let recibido = parseFloat($('#recibido').val());
     let vuelto = parseFloat($('#vuelto').text()) || 0;
 
-    // VALIDACIONES
     if(metodo === 'EFECTIVO'){
-
-        if(isNaN(recibido)){
-            alert("Debe ingresar el monto recibido");
+        if(isNaN(recibido) || recibido < total){
+            alert("Monto inválido");
             return;
         }
-
-        if(recibido < total){
-            alert("El monto recibido es menor al total");
-            return;
-        }
-
     } else {
         recibido = total;
         vuelto = 0;
     }
 
-    $.ajax({
-        url: "{{ route('ventas.store') }}",
-        method: "POST",
-        data: {
-            _token: document.querySelector('meta[name="csrf-token"]').getAttribute('content'),
+    $.post("{{ route('ventas.store') }}", {
 
-            cliente_id: 1,
-            comprobante_id: 1,
-            metodo_pago: metodo,
-            subtotal: subtotal,
-            impuesto: igv,
-            total: total,
-            monto_recibido: recibido,
-            vuelto_entregado: vuelto,
-            caja_id: 1,
+        cliente_id: 1,
+        comprobante_id: 1,
+        metodo_pago: metodo,
+        subtotal: subtotal,
+        impuesto: igv,
+        total: total,
+        monto_recibido: recibido,
+        vuelto_entregado: vuelto,
+        caja_id: 1,
 
-            arrayidproducto: carrito.map(p => p.id),
-            arraycantidad: carrito.map(p => p.cantidad),
-            arrayprecioventa: carrito.map(p => p.precio)
-        },
-        success: function(){
-            alert("Venta registrada correctamente");
-            location.reload();
-        },
-        error: function(xhr){
-            console.error(xhr.responseText);
-            alert("Error al guardar la venta");
-        }
+        arrayidproducto: carrito.map(p => p.id),
+        arraycantidad: carrito.map(p => p.cantidad),
+        arrayprecioventa: carrito.map(p => p.precio)
+
+    }).done(function(){
+        alert("Venta registrada");
+        location.reload();
+    }).fail(function(xhr){
+        console.error(xhr.responseText);
+        alert("Error al guardar");
     });
 }
 
