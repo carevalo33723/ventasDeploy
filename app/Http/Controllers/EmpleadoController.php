@@ -2,7 +2,7 @@
 
 namespace App\Http\Controllers;
 
-use App\Http\Requests\storeEmpleadoRequest;
+use App\Http\Requests\StoreEmpleadoRequest;
 use App\Models\Empleado;
 use App\Services\ActivityLogService;
 use Illuminate\Contracts\View\View;
