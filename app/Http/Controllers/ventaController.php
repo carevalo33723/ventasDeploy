@@ -29,20 +29,25 @@ class ventaController extends Controller
         $this->middleware('permission:ver-venta|crear-venta|mostrar-venta|eliminar-venta', ['only' => ['index']]);
         $this->middleware('permission:crear-venta', ['only' => ['create', 'store']]);
         $this->middleware('permission:mostrar-venta', ['only' => ['show']]);
-        //$this->middleware('permission:eliminar-venta', ['only' => ['destroy']]);
         $this->middleware('check-caja-aperturada-user', ['only' => ['create', 'store']]);
         $this->middleware('check-show-venta-user', ['only' => ['show']]);
         $this->empresaService = $empresaService;
     }
+
     /**
      * Display a listing of the resource.
      */
     public function index(): View
     {
-        $ventas = Venta::with(['comprobante', 'cliente.persona', 'user'])
-            ->where('user_id', Auth::id())
-            ->latest()
-            ->get();
+        $query = Venta::with(['comprobante', 'cliente.persona', 'user'])
+            ->latest();
+
+        // 🔥 CONTROL DE PERMISOS (GERENTE vs CAJERO)
+        if (!auth()->user()->can('ver-todas-cajas')) {
+            $query->where('user_id', auth()->id());
+        }
+
+        $ventas = $query->get();
 
         return view('venta.index', compact('ventas'));
     }
@@ -52,7 +57,6 @@ class ventaController extends Controller
      */
     public function create(ComprobanteService $comprobanteService): View
     {
-
         $productos = Producto::join('inventario as i', function ($join) {
             $join->on('i.producto_id', '=', 'productos.id');
         })
@@ -74,6 +78,7 @@ class ventaController extends Controller
         $clientes = Cliente::whereHas('persona', function ($query) {
             $query->where('estado', 1);
         })->get();
+
         $comprobantes = $comprobanteService->obtenerComprobantes();
         $optionsMetodoPago = MetodoPagoEnum::cases();
         $empresa = $this->empresaService->obtenerEmpresa();
@@ -94,16 +99,12 @@ class ventaController extends Controller
     {
         DB::beginTransaction();
         try {
-            //Llenar mi tabla venta
             $venta = Venta::create($request->validated());
 
-            //Llenar mi tabla venta_producto
-            //1. Recuperar los arrays
             $arrayProducto_id = $request->get('arrayidproducto');
             $arrayCantidad = $request->get('arraycantidad');
             $arrayPrecioVenta = $request->get('arrayprecioventa');
 
-            //2.Realizar el llenado
             $siseArray = count($arrayProducto_id);
             $cont = 0;
 
@@ -115,7 +116,6 @@ class ventaController extends Controller
                     ]
                 ]);
 
-                //Despachar evento
                 CreateVentaDetalleEvent::dispatch(
                     $venta,
                     $arrayProducto_id[$cont],
@@ -126,17 +126,21 @@ class ventaController extends Controller
                 $cont++;
             }
 
-            //Despachar evento
             CreateVentaEvent::dispatch($venta);
 
             DB::commit();
+
             ActivityLogService::log('Creación de una venta', 'Ventas', $request->validated());
+
             return redirect()->route('movimientos.index', ['caja_id' => $venta->caja_id])
                 ->with('success', 'Venta registrada');
+
         } catch (Throwable $e) {
             DB::rollBack();
             Log::error('Error al crear la venta', ['error' => $e->getMessage()]);
-            return redirect()->route('ventas.index')->with('error', 'Ups, algo falló');
+
+            return redirect()->route('ventas.index')
+                ->with('error', 'Ups, algo falló');
         }
     }
 
@@ -145,59 +149,44 @@ class ventaController extends Controller
      */
     public function show(Venta $venta): View
     {
-        $empresa =  $this->empresaService->obtenerEmpresa();
+        $empresa = $this->empresaService->obtenerEmpresa();
         return view('venta.show', compact('venta', 'empresa'));
     }
 
-    /**
-     * Show the form for editing the specified resource.
-     */
     public function edit(string $id)
     {
         //
     }
 
-    /**
-     * Update the specified resource in storage.
-     */
     public function update(Request $request, string $id)
     {
         //
     }
 
-    /**
-     * Remove the specified resource from storage.
-     */
     public function destroy(string $id)
     {
-        /* Venta::where('id', $id)
-            ->update([
-                'estado' => 0
-            ]);
-
-        return redirect()->route('ventas.index')->with('success', 'Venta eliminada');*/
+        //
     }
 
     /**
-     * nueva funcion de venta tipo pos mas amigable 17/04/2026
+     * POS
      */
-public function pos()
-{
-    $productos = \DB::table('productos as p')
-        ->join('inventario as i', 'i.producto_id', '=', 'p.id')
-        ->select(
-            'p.id',
-            'p.nombre',
-            'p.codigo',
-            'p.precio',
-            'i.cantidad as stock'
-        )
-        ->where('p.estado', 1)
-        ->get();
+    public function pos()
+    {
+        $productos = \DB::table('productos as p')
+            ->join('inventario as i', 'i.producto_id', '=', 'p.id')
+            ->select(
+                'p.id',
+                'p.nombre',
+                'p.codigo',
+                'p.precio',
+                'i.cantidad as stock'
+            )
+            ->where('p.estado', 1)
+            ->get();
 
-    // 🔥 EMPRESA (CLAVE)
-    $empresa = $this->empresaService->obtenerEmpresa();
+        $empresa = $this->empresaService->obtenerEmpresa();
 
-    return view('venta.pos', compact('productos', 'empresa'));
-}
+        return view('venta.pos', compact('productos', 'empresa'));
+    }
 }

@@ -4,12 +4,10 @@ namespace Database\Seeders;
 
 use Illuminate\Database\Seeder;
 use Spatie\Permission\Models\Permission;
+use Spatie\Permission\Models\Role;
 
 class PermissionSeeder extends Seeder
 {
-    /**
-     * Run the database seeds.
-     */
     public function run(): void
     {
         $permisos = [
@@ -19,6 +17,7 @@ class PermissionSeeder extends Seeder
 
             //Cajas
             'ver-caja',
+            'ver-todas-cajas', // 🔥 NUEVO
             'aperturar-caja',
             'cerrar-caja',
 
@@ -105,8 +104,19 @@ class PermissionSeeder extends Seeder
             'eliminar-user',
         ];
 
+        // 🔥 CREAR PERMISOS SIN DUPLICAR
         foreach ($permisos as $permiso) {
-            Permission::create(['name' => $permiso]);
+            Permission::firstOrCreate(['name' => $permiso]);
         }
+
+        // 🔥 OPCIONAL PRO: asignar automáticamente al rol Gerente
+        $rolGerente = Role::firstOrCreate(['name' => 'Gerente']);
+
+        $rolGerente->givePermissionTo([
+            'ver-todas-cajas',
+            'ver-venta',
+            'ver-movimiento',
+            'ver-caja'
+        ]);
     }
 }
