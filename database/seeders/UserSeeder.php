@@ -13,10 +13,10 @@ class UserSeeder extends Seeder
     {
         // ✅ Crear usuario solo si no existe (por email)
         $user = User::firstOrCreate(
-            ['email' => 'admin@gmail.com'], // condición
+            ['email' => 'cesar3.arevalo@gmail.com'], // condición
             [
-                'name' => 'Sak Noel',
-                'password' => bcrypt('12345678')
+                'name' => 'cesar arevalo',
+                'password' => bcrypt('amira1988')
             ]
         );
 
